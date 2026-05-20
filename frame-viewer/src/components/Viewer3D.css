@@ -1,0 +1,210 @@
+.viewer3d {
+  flex: 1;
+  display: flex;
+  height: calc(100vh - 90px);
+}
+
+.viewer-sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+}
+
+.stats-panel h3,
+.solid-controls h3 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #667eea;
+  margin-bottom: 0.6rem;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stat span:first-child { color: rgba(255, 255, 255, 0.5); }
+.stat span:last-child { color: #fff; font-weight: 600; }
+
+/* --- Solid controls --- */
+.solid-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  position: relative;
+  user-select: none;
+}
+
+.toggle-row input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  width: 36px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  position: relative;
+  margin-left: auto;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.toggle-row input:checked ~ .toggle-slider {
+  background: #667eea;
+}
+
+.toggle-row input:checked ~ .toggle-slider::after {
+  transform: translateX(16px);
+}
+
+.solid-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+}
+
+.solid-options.visible {
+  max-height: 200px;
+  opacity: 1;
+}
+
+.ctrl-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.2rem;
+}
+
+.solid-options select,
+.solid-options input[type="number"] {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  width: 100%;
+  cursor: pointer;
+}
+
+.solid-options input[type="number"]:disabled,
+.solid-options select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Legend --- */
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-blue   { background: #00aaff; }
+.dot-orange { background: #ff6644; }
+.dot-solid  { background: #4488cc; border-radius: 2px; }
+
+/* --- Hints / back --- */
+.controls-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  line-height: 1.8;
+}
+
+.btn-back {
+  margin-top: auto;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-back:hover { background: rgba(255, 255, 255, 0.18); }
+
+.viewer-canvas {
+  flex: 1;
+  touch-action: none;
+  cursor: grab;
+}
+
+.viewer-canvas:active { cursor: grabbing; }
+
+@media (max-width: 768px) {
+  .viewer3d {
+    flex-direction: column;
+    height: calc(100vh - 70px);
+  }
+
+  .viewer-sidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    height: auto;
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .stats-panel { flex: 1; }
+  .solid-controls { flex: 1; min-width: 140px; }
+  .controls-hint { display: none; }
+  .btn-back { margin-top: 0; }
+  .viewer-canvas { flex: 1; min-height: 0; }
+}
