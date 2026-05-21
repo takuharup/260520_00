@@ -102,10 +102,12 @@ export default function Viewer3D({
   const sceneRef = useRef(null)
   const linesMeshRef = useRef(null)
   const solidMeshRef = useRef(null)
+  const solidMatRef = useRef(null)
   const constraintGroupRef = useRef(null)
   const highlightGroupRef = useRef(null)
   const maxDimRef = useRef(1)
   const gridMapRef = useRef({})
+  const elemMapRef = useRef({})
 
   const [showSolid, setShowSolid] = useState(false)
   const [sectionType, setSectionType] = useState('rect')
@@ -116,7 +118,6 @@ export default function Viewer3D({
     if (solidMeshRef.current) {
       scene.remove(solidMeshRef.current)
       solidMeshRef.current.geometry.dispose()
-      solidMeshRef.current.material.dispose()
       solidMeshRef.current = null
     }
     if (!data.elements || data.elements.length === 0) return
@@ -124,34 +125,22 @@ export default function Viewer3D({
     const geom = buildSolidGeometry(data, gridMapRef.current, sType, sSize)
     if (!geom) return
 
-    const mat = new THREE.MeshPhongMaterial({
-      color: 0x4488cc,
-      transparent: true,
-      opacity: 0.85,
-      side: THREE.DoubleSide,
-    })
-    const mesh = new THREE.Mesh(geom, mat)
+    const mesh = new THREE.Mesh(geom, solidMatRef.current)
     solidMeshRef.current = mesh
     scene.add(mesh)
   }, [data])
 
-  // Toggle line ↔ solid
+  // Unified solid display effect (replaces two overlapping effects)
   useEffect(() => {
     if (!sceneRef.current) return
     if (linesMeshRef.current) linesMeshRef.current.visible = !showSolid
-    if (solidMeshRef.current) solidMeshRef.current.visible = showSolid
-    if (showSolid && !solidMeshRef.current) {
-      rebuildSolid(sceneRef.current, sectionType, sectionSize)
-      if (solidMeshRef.current) solidMeshRef.current.visible = true
+    if (!showSolid) {
+      if (solidMeshRef.current) solidMeshRef.current.visible = false
+      return
     }
-  }, [showSolid, rebuildSolid, sectionType, sectionSize])
-
-  // Rebuild solid when section params change (solid mode only)
-  useEffect(() => {
-    if (!sceneRef.current || !showSolid) return
     rebuildSolid(sceneRef.current, sectionType, sectionSize)
     if (solidMeshRef.current) solidMeshRef.current.visible = true
-  }, [sectionType, sectionSize, showSolid, rebuildSolid])
+  }, [showSolid, sectionType, sectionSize, rebuildSolid])
 
   // Update constraint markers
   useEffect(() => {
@@ -192,19 +181,19 @@ export default function Viewer3D({
 
     const maxDim = maxDimRef.current
     const sphereR = Math.max(maxDim * 0.022, 0.008)
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffee00 })
+    const yellowMat = () => new THREE.MeshBasicMaterial({ color: 0xffee00 })
 
     if (selectedGridId != null) {
       const g = gridMapRef.current[selectedGridId]
       if (g) {
-        const sphere = new THREE.Mesh(new THREE.SphereGeometry(sphereR, 16, 16), mat.clone())
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(sphereR, 16, 16), yellowMat())
         sphere.position.set(g.x, g.y, g.z)
         group.add(sphere)
       }
     }
 
     if (selectedElemId != null) {
-      const elem = data.elements?.find(e => e.id === selectedElemId)
+      const elem = elemMapRef.current[selectedElemId]
       if (elem) {
         const sg = gridMapRef.current[elem.start_grid]
         const eg = gridMapRef.current[elem.end_grid]
@@ -214,16 +203,14 @@ export default function Viewer3D({
           lineGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
           group.add(new THREE.LineSegments(lineGeom, new THREE.LineBasicMaterial({ color: 0xffee00 })))
           ;[sg, eg].forEach(pt => {
-            const s = new THREE.Mesh(new THREE.SphereGeometry(sphereR * 0.8, 12, 12), mat.clone())
+            const s = new THREE.Mesh(new THREE.SphereGeometry(sphereR * 0.8, 12, 12), yellowMat())
             s.position.set(pt.x, pt.y, pt.z)
             group.add(s)
           })
         }
       }
     }
-
-    mat.dispose()
-  }, [selectedGridId, selectedElemId, data.elements])
+  }, [selectedGridId, selectedElemId])
 
   // Scene init
   useEffect(() => {
@@ -256,9 +243,17 @@ export default function Viewer3D({
     highlightGroupRef.current = highlightGroup
     scene.add(highlightGroup)
 
+    solidMatRef.current = new THREE.MeshPhongMaterial({
+      color: 0x4488cc, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    })
+
     const gridMap = {}
     if (data.grids) data.grids.forEach(g => { gridMap[g.id] = g })
     gridMapRef.current = gridMap
+
+    const elemMap = {}
+    if (data.elements) data.elements.forEach(e => { elemMap[e.id] = e })
+    elemMapRef.current = elemMap
 
     // Grid points
     if (data.grids?.length > 0) {
@@ -393,11 +388,14 @@ export default function Viewer3D({
       })
       renderer.dispose()
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
+      solidMatRef.current?.dispose()
+      solidMatRef.current = null
       sceneRef.current = null
       linesMeshRef.current = null
       solidMeshRef.current = null
       constraintGroupRef.current = null
       highlightGroupRef.current = null
+      elemMapRef.current = {}
     }
   }, [data])
 
