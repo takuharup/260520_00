@@ -11,6 +11,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768)
   const { constraints, toggleConstraint } = useConstraints()
   const { selectedGridId, selectedElemId, selectGrid, selectElem, clearSelection } = useSelection()
 
@@ -54,21 +55,25 @@ export default function App() {
           />
         ) : (
           <div className="viewer-layout">
-            <Sidebar
-              data={parsedData}
-              constraints={constraints}
-              selectedGridId={selectedGridId}
-              selectedElemId={selectedElemId}
-              onSelectGrid={selectGrid}
-              onSelectElem={selectElem}
-              onToggleConstraint={toggleConstraint}
-            />
+            <div className={`sidebar-wrapper${sidebarOpen ? ' open' : ''}`}>
+              <Sidebar
+                data={parsedData}
+                constraints={constraints}
+                selectedGridId={selectedGridId}
+                selectedElemId={selectedElemId}
+                onSelectGrid={selectGrid}
+                onSelectElem={selectElem}
+                onToggleConstraint={toggleConstraint}
+              />
+            </div>
             <Viewer3D
               data={parsedData}
               onBack={handleReset}
               constraints={constraints}
               selectedGridId={selectedGridId}
               selectedElemId={selectedElemId}
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={() => setSidebarOpen(v => !v)}
             />
           </div>
         )}

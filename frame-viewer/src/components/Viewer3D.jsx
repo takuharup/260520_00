@@ -97,6 +97,8 @@ export default function Viewer3D({
   constraints = [],
   selectedGridId = null,
   selectedElemId = null,
+  sidebarOpen = true,
+  onToggleSidebar = null,
 }) {
   const containerRef = useRef(null)
   const sceneRef = useRef(null)
@@ -295,7 +297,11 @@ export default function Viewer3D({
     const sceneCenter = center.clone()
     const halfViewRef = { v: halfView }
 
-    const state = { isDragging: false, prevMouse: { x: 0, y: 0 }, rotX: 0, rotY: 0, touchStartDist: 0 }
+    const state = {
+      isDragging: false, isPanning: false,
+      prevMouse: { x: 0, y: 0 }, prevMid: null,
+      rotX: 0, rotY: 0, touchStartDist: 0,
+    }
 
     function rotate(dx, dy) {
       state.rotY += dx * 0.01
@@ -311,13 +317,33 @@ export default function Viewer3D({
       camera.updateProjectionMatrix()
     }
 
-    const onMouseDown = e => { state.isDragging = true; state.prevMouse = { x: e.clientX, y: e.clientY } }
-    const onMouseMove = e => {
-      if (!state.isDragging) return
-      rotate(e.clientX - state.prevMouse.x, e.clientY - state.prevMouse.y)
-      state.prevMouse = { x: e.clientX, y: e.clientY }
+    function pan(dx, dy) {
+      const w = container.clientWidth, h = container.clientHeight
+      const worldW = (camera.right - camera.left) / camera.zoom
+      const worldH = (camera.top - camera.bottom) / camera.zoom
+      const delta = new THREE.Vector3(-dx / w * worldW, dy / h * worldH, 0)
+        .applyQuaternion(camera.quaternion)
+      camera.position.add(delta)
+      sceneCenter.add(delta)
+      camera.lookAt(sceneCenter)
     }
-    const onMouseUp = () => { state.isDragging = false }
+
+    const onContextMenu = e => e.preventDefault()
+    const onMouseDown = e => {
+      state.prevMouse = { x: e.clientX, y: e.clientY }
+      if (e.button === 2) state.isPanning = true
+      else if (e.button === 0) state.isDragging = true
+    }
+    const onMouseMove = e => {
+      if (state.isDragging) {
+        rotate(e.clientX - state.prevMouse.x, e.clientY - state.prevMouse.y)
+        state.prevMouse = { x: e.clientX, y: e.clientY }
+      } else if (state.isPanning) {
+        pan(e.clientX - state.prevMouse.x, e.clientY - state.prevMouse.y)
+        state.prevMouse = { x: e.clientX, y: e.clientY }
+      }
+    }
+    const onMouseUp = () => { state.isDragging = false; state.isPanning = false }
     const onWheel = e => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.1 : 0.9) }
 
     const onTouchStart = e => {
@@ -327,9 +353,14 @@ export default function Viewer3D({
         const dy = e.touches[0].clientY - e.touches[1].clientY
         state.touchStartDist = Math.sqrt(dx * dx + dy * dy)
         state.isDragging = false
+        state.prevMid = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        }
       } else if (e.touches.length === 1) {
         state.isDragging = true
         state.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+        state.prevMid = null
       }
     }
     const onTouchMove = e => {
@@ -340,12 +371,16 @@ export default function Viewer3D({
         const dist = Math.sqrt(dx * dx + dy * dy)
         zoom(dist > state.touchStartDist ? 0.95 : 1.05)
         state.touchStartDist = dist
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+        if (state.prevMid) pan(midX - state.prevMid.x, midY - state.prevMid.y)
+        state.prevMid = { x: midX, y: midY }
       } else if (e.touches.length === 1 && state.isDragging) {
         rotate(e.touches[0].clientX - state.prevMouse.x, e.touches[0].clientY - state.prevMouse.y)
         state.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY }
       }
     }
-    const onTouchEnd = () => { state.isDragging = false }
+    const onTouchEnd = () => { state.isDragging = false; state.prevMid = null }
 
     const onResize = () => {
       const w = container.clientWidth, h = container.clientHeight, a = w / h
@@ -356,6 +391,7 @@ export default function Viewer3D({
       renderer.setSize(w, h)
     }
 
+    renderer.domElement.addEventListener('contextmenu', onContextMenu)
     renderer.domElement.addEventListener('mousedown', onMouseDown)
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
@@ -371,6 +407,7 @@ export default function Viewer3D({
 
     return () => {
       cancelAnimationFrame(animId)
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu)
       renderer.domElement.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
@@ -406,6 +443,11 @@ export default function Viewer3D({
 
   return (
     <div className="viewer3d">
+      {onToggleSidebar && (
+        <button className="sidebar-toggle-btn" onClick={onToggleSidebar} title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+          {sidebarOpen ? '◀' : '▶'}
+        </button>
+      )}
       <div className="viewer-sidebar">
         <div className="stats-panel">
           <h3>Model Info</h3>

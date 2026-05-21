@@ -43,6 +43,17 @@
   overflow: hidden;
 }
 
+.sidebar-wrapper {
+  width: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.sidebar-wrapper.open {
+  width: 240px;
+}
+
 .loading-overlay {
   position: fixed;
   inset: 0;
