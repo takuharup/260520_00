@@ -1,11 +1,12 @@
 .viewer3d {
   flex: 1;
   display: flex;
-  height: calc(100vh - 90px);
+  min-width: 0;
+  min-height: 0;
 }
 
 .viewer-sidebar {
-  width: 210px;
+  width: 200px;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.6);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
@@ -85,13 +86,8 @@
   transition: transform 0.2s;
 }
 
-.toggle-row input:checked ~ .toggle-slider {
-  background: #667eea;
-}
-
-.toggle-row input:checked ~ .toggle-slider::after {
-  transform: translateX(16px);
-}
+.toggle-row input:checked ~ .toggle-slider { background: #667eea; }
+.toggle-row input:checked ~ .toggle-slider::after { transform: translateX(16px); }
 
 .solid-options {
   display: flex;
@@ -103,10 +99,7 @@
   transition: max-height 0.25s ease, opacity 0.2s ease;
 }
 
-.solid-options.visible {
-  max-height: 200px;
-  opacity: 1;
-}
+.solid-options.visible { max-height: 200px; opacity: 1; }
 
 .ctrl-label {
   font-size: 0.75rem;
@@ -127,10 +120,7 @@
 }
 
 .solid-options input[type="number"]:disabled,
-.solid-options select:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+.solid-options select:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* --- Legend --- */
 .legend {
@@ -143,8 +133,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .dot {
@@ -154,9 +144,12 @@
   flex-shrink: 0;
 }
 
-.dot-blue   { background: #00aaff; }
-.dot-orange { background: #ff6644; }
-.dot-solid  { background: #4488cc; border-radius: 2px; }
+.dot-blue    { background: #00aaff; }
+.dot-orange  { background: #ff6644; }
+.dot-solid   { background: #4488cc; border-radius: 2px; }
+.dot-red     { background: #ee3333; border-radius: 2px; }
+.dot-indigo  { background: #3366ee; border-radius: 2px; }
+.dot-yellow  { background: #ffee00; }
 
 /* --- Hints / back --- */
 .controls-hint {
@@ -183,15 +176,14 @@
   flex: 1;
   touch-action: none;
   cursor: grab;
+  min-width: 0;
+  min-height: 0;
 }
 
 .viewer-canvas:active { cursor: grabbing; }
 
-@media (max-width: 768px) {
-  .viewer3d {
-    flex-direction: column;
-    height: calc(100vh - 70px);
-  }
+@media (max-width: 900px) {
+  .viewer3d { flex-direction: column; }
 
   .viewer-sidebar {
     width: 100%;
@@ -206,5 +198,5 @@
   .solid-controls { flex: 1; min-width: 140px; }
   .controls-hint { display: none; }
   .btn-back { margin-top: 0; }
-  .viewer-canvas { flex: 1; min-height: 0; }
+  .viewer-canvas { flex: 1; min-height: 200px; }
 }

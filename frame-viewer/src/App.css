@@ -32,6 +32,15 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.viewer-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .loading-overlay {

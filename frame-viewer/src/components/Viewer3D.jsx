@@ -2,10 +2,23 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { mergeBufferGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { makeRectShape, makeCircleShape, sectionDimsFromProp } from '../utils/crossSection.js'
+import { CONSTRAINT_COLORS } from '../data/constraints.js'
 import './Viewer3D.css'
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1)
 const DEFAULT_SECTION_SIZE = 0.1
+
+function clearGroup(group) {
+  while (group.children.length > 0) {
+    const child = group.children[0]
+    if (child.geometry) child.geometry.dispose()
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose())
+      else child.material.dispose()
+    }
+    group.remove(child)
+  }
+}
 
 function buildLineGeometry(data, gridMap) {
   const linePositions = []
@@ -56,13 +69,11 @@ function buildSolidGeometry(data, gridMap, sectionType, sectionSize) {
     const extrudeSettings = { steps: 1, depth: length, bevelEnabled: false }
     const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings)
 
-    // Rotate from +Z to the element direction
-    let quaternion
     const dot = Z_AXIS.dot(direction)
+    let quaternion
     if (dot > 0.9999) {
       quaternion = new THREE.Quaternion()
     } else if (dot < -0.9999) {
-      // Anti-parallel to Z: rotate 180° around X
       quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)
     } else {
       quaternion = new THREE.Quaternion().setFromUnitVectors(Z_AXIS, direction)
@@ -75,20 +86,25 @@ function buildSolidGeometry(data, gridMap, sectionType, sectionSize) {
 
   if (geometries.length === 0) return null
 
-  // Merge all geometries into a single draw call
   const merged = mergeBufferGeometries(geometries, false)
   geometries.forEach(g => g.dispose())
   return merged
 }
 
-export default function Viewer3D({ data, onBack }) {
+export default function Viewer3D({
+  data,
+  onBack,
+  constraints = [],
+  selectedGridId = null,
+  selectedElemId = null,
+}) {
   const containerRef = useRef(null)
   const sceneRef = useRef(null)
   const linesMeshRef = useRef(null)
   const solidMeshRef = useRef(null)
-  const rendererRef = useRef(null)
-  const cameraRef = useRef(null)
-  const halfViewRef = useRef(1)
+  const constraintGroupRef = useRef(null)
+  const highlightGroupRef = useRef(null)
+  const maxDimRef = useRef(1)
   const gridMapRef = useRef({})
 
   const [showSolid, setShowSolid] = useState(false)
@@ -96,11 +112,11 @@ export default function Viewer3D({ data, onBack }) {
   const [sectionSize, setSectionSize] = useState(DEFAULT_SECTION_SIZE)
   const [sectionSizeInput, setSectionSizeInput] = useState(String(DEFAULT_SECTION_SIZE))
 
-  // Build solid geometry and swap meshes when solid params change
   const rebuildSolid = useCallback((scene, sType, sSize) => {
     if (solidMeshRef.current) {
       scene.remove(solidMeshRef.current)
       solidMeshRef.current.geometry.dispose()
+      solidMeshRef.current.material.dispose()
       solidMeshRef.current = null
     }
     if (!data.elements || data.elements.length === 0) return
@@ -119,7 +135,7 @@ export default function Viewer3D({ data, onBack }) {
     scene.add(mesh)
   }, [data])
 
-  // Toggle visibility of lines vs solid
+  // Toggle line ↔ solid
   useEffect(() => {
     if (!sceneRef.current) return
     if (linesMeshRef.current) linesMeshRef.current.visible = !showSolid
@@ -130,14 +146,86 @@ export default function Viewer3D({ data, onBack }) {
     }
   }, [showSolid, rebuildSolid, sectionType, sectionSize])
 
-  // Rebuild solid when section params change (only if in solid mode)
+  // Rebuild solid when section params change (solid mode only)
   useEffect(() => {
     if (!sceneRef.current || !showSolid) return
     rebuildSolid(sceneRef.current, sectionType, sectionSize)
     if (solidMeshRef.current) solidMeshRef.current.visible = true
   }, [sectionType, sectionSize, showSolid, rebuildSolid])
 
-  // Three.js scene init
+  // Update constraint markers
+  useEffect(() => {
+    const group = constraintGroupRef.current
+    if (!group) return
+    clearGroup(group)
+
+    const maxDim = maxDimRef.current
+    const coneR = Math.max(maxDim * 0.025, 0.01)
+    const coneH = Math.max(maxDim * 0.06, 0.02)
+
+    constraints.forEach(c => {
+      const g = gridMapRef.current[c.gridId]
+      if (!g) return
+      const color = CONSTRAINT_COLORS[c.type] ?? CONSTRAINT_COLORS.custom
+      const coneGeom = new THREE.ConeGeometry(coneR, coneH, 6)
+      const mat = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.92 })
+      const cone = new THREE.Mesh(coneGeom, mat)
+      // Tip of cone (y = +coneH/2) placed at grid node → shift center down by coneH/2
+      cone.position.set(g.x, g.y - coneH / 2, g.z)
+      group.add(cone)
+
+      // Base plate for fixed supports
+      if (c.type === 'fixed') {
+        const plateGeom = new THREE.BoxGeometry(coneR * 2.2, coneH * 0.12, coneR * 2.2)
+        const plate = new THREE.Mesh(plateGeom, mat.clone())
+        plate.position.set(g.x, g.y - coneH - coneH * 0.06, g.z)
+        group.add(plate)
+      }
+    })
+  }, [constraints])
+
+  // Update selection highlight
+  useEffect(() => {
+    const group = highlightGroupRef.current
+    if (!group) return
+    clearGroup(group)
+
+    const maxDim = maxDimRef.current
+    const sphereR = Math.max(maxDim * 0.022, 0.008)
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffee00 })
+
+    if (selectedGridId != null) {
+      const g = gridMapRef.current[selectedGridId]
+      if (g) {
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(sphereR, 16, 16), mat.clone())
+        sphere.position.set(g.x, g.y, g.z)
+        group.add(sphere)
+      }
+    }
+
+    if (selectedElemId != null) {
+      const elem = data.elements?.find(e => e.id === selectedElemId)
+      if (elem) {
+        const sg = gridMapRef.current[elem.start_grid]
+        const eg = gridMapRef.current[elem.end_grid]
+        if (sg && eg) {
+          const positions = new Float32Array([sg.x, sg.y, sg.z, eg.x, eg.y, eg.z])
+          const lineGeom = new THREE.BufferGeometry()
+          lineGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+          group.add(new THREE.LineSegments(lineGeom, new THREE.LineBasicMaterial({ color: 0xffee00 })))
+          ;[sg, eg].forEach(pt => {
+            const s = new THREE.Mesh(new THREE.SphereGeometry(sphereR * 0.8, 12, 12), mat.clone())
+            s.position.set(pt.x, pt.y, pt.z)
+            group.add(s)
+          })
+        }
+      }
+    }
+
+    mat.dispose()
+  }, [selectedGridId, selectedElemId, data.elements])
+
+  // Scene init
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -146,101 +234,80 @@ export default function Viewer3D({ data, onBack }) {
     scene.background = new THREE.Color(0x1a1a1a)
     sceneRef.current = scene
 
-    const width = container.clientWidth
-    const height = container.clientHeight
-    const aspect = width / height
-    const camera = new THREE.OrthographicCamera(
-      -1, 1, 1 / aspect, -1 / aspect, -100000, 100000
-    )
-    cameraRef.current = camera
-
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setSize(width, height)
+    renderer.setSize(container.clientWidth, container.clientHeight)
     container.appendChild(renderer.domElement)
-    rendererRef.current = renderer
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.6))
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
     dirLight.position.set(1, 2, 3)
     scene.add(dirLight)
-
     scene.add(new THREE.GridHelper(500, 50, 0x444444, 0x222222))
     scene.add(new THREE.AxesHelper(50))
 
+    // Groups for markers (populated by separate effects)
+    const constraintGroup = new THREE.Group()
+    constraintGroupRef.current = constraintGroup
+    scene.add(constraintGroup)
+
+    const highlightGroup = new THREE.Group()
+    highlightGroupRef.current = highlightGroup
+    scene.add(highlightGroup)
+
     const gridMap = {}
-    if (data.grids) {
-      data.grids.forEach(g => { gridMap[g.id] = g })
-    }
+    if (data.grids) data.grids.forEach(g => { gridMap[g.id] = g })
     gridMapRef.current = gridMap
 
-    // Grid point cloud
-    if (data.grids && data.grids.length > 0) {
+    // Grid points
+    if (data.grids?.length > 0) {
       const positions = new Float32Array(data.grids.length * 3)
       data.grids.forEach((g, i) => {
-        positions[i * 3] = g.x
-        positions[i * 3 + 1] = g.y
-        positions[i * 3 + 2] = g.z
+        positions[i * 3] = g.x; positions[i * 3 + 1] = g.y; positions[i * 3 + 2] = g.z
       })
       const geom = new THREE.BufferGeometry()
       geom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      const mat = new THREE.PointsMaterial({ color: 0x00aaff, size: 4, sizeAttenuation: false })
-      scene.add(new THREE.Points(geom, mat))
+      scene.add(new THREE.Points(geom, new THREE.PointsMaterial({ color: 0x00aaff, size: 4, sizeAttenuation: false })))
     }
 
     // Line elements
-    if (data.elements && data.elements.length > 0) {
+    if (data.elements?.length > 0) {
       const lineGeom = buildLineGeometry(data, gridMap)
       if (lineGeom) {
-        const mat = new THREE.LineBasicMaterial({ color: 0xff6644 })
-        const linesMesh = new THREE.LineSegments(lineGeom, mat)
-        linesMeshRef.current = linesMesh
-        scene.add(linesMesh)
+        const mesh = new THREE.LineSegments(lineGeom, new THREE.LineBasicMaterial({ color: 0xff6644 }))
+        linesMeshRef.current = mesh
+        scene.add(mesh)
       }
     }
 
-    // Fit camera to model
+    // Fit camera
     const box = new THREE.Box3().setFromObject(scene)
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 1)
+    maxDimRef.current = maxDim
     const halfView = maxDim * 0.7
-    halfViewRef.current = halfView
     const camDist = maxDim * 10
-    const w = container.clientWidth
-    const h = container.clientHeight
-    const asp = w / h
-    camera.left   = -halfView * asp
-    camera.right  =  halfView * asp
-    camera.top    =  halfView
-    camera.bottom = -halfView
-    camera.near   = -camDist
-    camera.far    =  camDist
-    camera.position.copy(center)
-    camera.position.z += camDist / 2
+    const asp = container.clientWidth / container.clientHeight
+    camera.left = -halfView * asp; camera.right = halfView * asp
+    camera.top = halfView; camera.bottom = -halfView
+    camera.near = -camDist; camera.far = camDist
+    camera.position.copy(center); camera.position.z += camDist / 2
     camera.lookAt(center)
     camera.updateProjectionMatrix()
 
     const sceneCenter = center.clone()
+    const halfViewRef = { v: halfView }
 
-    const state = {
-      isDragging: false,
-      prevMouse: { x: 0, y: 0 },
-      rotX: 0,
-      rotY: 0,
-      touchStartDist: 0,
-    }
+    const state = { isDragging: false, prevMouse: { x: 0, y: 0 }, rotX: 0, rotY: 0, touchStartDist: 0 }
 
     function rotate(dx, dy) {
       state.rotY += dx * 0.01
-      state.rotX += dy * 0.01
-      state.rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.rotX))
-      const q = new THREE.Quaternion()
-      q.setFromEuler(new THREE.Euler(state.rotX, state.rotY, 0, 'YXZ'))
-      const offset = camera.position.clone().sub(sceneCenter)
-      const dist = offset.length()
-      const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q)
-      camera.position.copy(sceneCenter).addScaledVector(dir, dist)
+      state.rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.rotX + dy * 0.01))
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(state.rotX, state.rotY, 0, 'YXZ'))
+      const dist = camera.position.clone().sub(sceneCenter).length()
+      camera.position.copy(sceneCenter).addScaledVector(new THREE.Vector3(0, 0, 1).applyQuaternion(q), dist)
       camera.lookAt(sceneCenter)
     }
 
@@ -249,16 +316,16 @@ export default function Viewer3D({ data, onBack }) {
       camera.updateProjectionMatrix()
     }
 
-    const onMouseDown = (e) => { state.isDragging = true; state.prevMouse = { x: e.clientX, y: e.clientY } }
-    const onMouseMove = (e) => {
+    const onMouseDown = e => { state.isDragging = true; state.prevMouse = { x: e.clientX, y: e.clientY } }
+    const onMouseMove = e => {
       if (!state.isDragging) return
       rotate(e.clientX - state.prevMouse.x, e.clientY - state.prevMouse.y)
       state.prevMouse = { x: e.clientX, y: e.clientY }
     }
     const onMouseUp = () => { state.isDragging = false }
-    const onWheel = (e) => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.1 : 0.9) }
+    const onWheel = e => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.1 : 0.9) }
 
-    const onTouchStart = (e) => {
+    const onTouchStart = e => {
       e.preventDefault()
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX
@@ -270,7 +337,7 @@ export default function Viewer3D({ data, onBack }) {
         state.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY }
       }
     }
-    const onTouchMove = (e) => {
+    const onTouchMove = e => {
       e.preventDefault()
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX
@@ -286,14 +353,10 @@ export default function Viewer3D({ data, onBack }) {
     const onTouchEnd = () => { state.isDragging = false }
 
     const onResize = () => {
-      const w = container.clientWidth
-      const h = container.clientHeight
-      const a = w / h
-      const hv = halfViewRef.current
-      camera.left   = -hv * a
-      camera.right  =  hv * a
-      camera.top    =  hv
-      camera.bottom = -hv
+      const w = container.clientWidth, h = container.clientHeight, a = w / h
+      const hv = halfViewRef.v
+      camera.left = -hv * a; camera.right = hv * a
+      camera.top = hv; camera.bottom = -hv
       camera.updateProjectionMatrix()
       renderer.setSize(w, h)
     }
@@ -308,10 +371,7 @@ export default function Viewer3D({ data, onBack }) {
     window.addEventListener('resize', onResize)
 
     let animId
-    const animate = () => {
-      animId = requestAnimationFrame(animate)
-      renderer.render(scene, camera)
-    }
+    const animate = () => { animId = requestAnimationFrame(animate); renderer.render(scene, camera) }
     animate()
 
     return () => {
@@ -326,25 +386,24 @@ export default function Viewer3D({ data, onBack }) {
       window.removeEventListener('resize', onResize)
       scene.traverse(obj => {
         if (obj.geometry) obj.geometry.dispose()
-        if (obj.material) obj.material.dispose()
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose())
+          else obj.material.dispose()
+        }
       })
       renderer.dispose()
-      if (container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement)
-      }
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
       sceneRef.current = null
       linesMeshRef.current = null
       solidMeshRef.current = null
-      rendererRef.current = null
-      cameraRef.current = null
+      constraintGroupRef.current = null
+      highlightGroupRef.current = null
     }
   }, [data])
 
   function handleSectionSizeCommit(value) {
     const parsed = parseFloat(value)
-    if (!isNaN(parsed) && parsed > 0) {
-      setSectionSize(parsed)
-    }
+    if (!isNaN(parsed) && parsed > 0) setSectionSize(parsed)
   }
 
   return (
@@ -402,6 +461,9 @@ export default function Viewer3D({ data, onBack }) {
             <span className={`dot ${showSolid ? 'dot-solid' : 'dot-orange'}`} />
             {showSolid ? 'Solid beams' : 'Elements (members)'}
           </div>
+          <div className="legend-item"><span className="dot dot-red" />Fixed constraint</div>
+          <div className="legend-item"><span className="dot dot-indigo" />Pinned constraint</div>
+          <div className="legend-item"><span className="dot dot-yellow" />Selected</div>
         </div>
 
         <div className="controls-hint">

@@ -1,12 +1,18 @@
 import { useState } from 'react'
 import FileUpload from './components/FileUpload.jsx'
 import Viewer3D from './components/Viewer3D.jsx'
+import Sidebar from './components/Sidebar.jsx'
+import { useConstraints } from './hooks/useConstraints.js'
+import { useSelection } from './hooks/useSelection.js'
 import './App.css'
 
 export default function App() {
   const [parsedData, setParsedData] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  const { constraints, toggleConstraint } = useConstraints()
+  const { selectedGridId, selectedElemId, selectGrid, selectElem, clearSelection } = useSelection()
 
   function handleFileParsed(data) {
     setError(null)
@@ -23,6 +29,7 @@ export default function App() {
     setParsedData(null)
     setError(null)
     setIsLoading(false)
+    clearSelection()
   }
 
   return (
@@ -46,7 +53,24 @@ export default function App() {
             onError={setError}
           />
         ) : (
-          <Viewer3D data={parsedData} onBack={handleReset} />
+          <div className="viewer-layout">
+            <Sidebar
+              data={parsedData}
+              constraints={constraints}
+              selectedGridId={selectedGridId}
+              selectedElemId={selectedElemId}
+              onSelectGrid={selectGrid}
+              onSelectElem={selectElem}
+              onToggleConstraint={toggleConstraint}
+            />
+            <Viewer3D
+              data={parsedData}
+              onBack={handleReset}
+              constraints={constraints}
+              selectedGridId={selectedGridId}
+              selectedElemId={selectedElemId}
+            />
+          </div>
         )}
         {error && !parsedData && (
           <div className="error-panel">
